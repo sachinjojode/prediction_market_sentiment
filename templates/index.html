@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MarketMinds - Multi-Agent Sentiment Trader</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        @keyframes fadeInScale {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+        
+        .result-card {
+            animation: fadeIn 0.6s ease-out;
+        }
+        
+        .result-card:nth-child(1) { animation-delay: 0.1s; }
+        .result-card:nth-child(2) { animation-delay: 0.2s; }
+        .result-card:nth-child(3) { animation-delay: 0.3s; }
+        .result-card:nth-child(4) { animation-delay: 0.4s; }
+    </style>
+    <script>
+        // Verify Chart.js is loaded
+        window.addEventListener('DOMContentLoaded', function() {
+            if (typeof Chart === 'undefined') {
+                console.error('[FRONTEND] Chart.js failed to load');
+            } else {
+                console.log('[FRONTEND] Chart.js loaded successfully, version:', Chart.version);
+            }
+            
+            // Add smooth scroll behavior
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const target = document.querySelector(this.getAttribute('href'));
+                    if (target) {
+                        target.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start'
+                        });
+                    }
+                });
+            });
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>MarketMinds</h1>
+        </div>
+        
+        <div class="content">
+            <div class="input-section">
+                <div class="input-group">
+                    <input 
+                        type="text" 
+                        id="tickerInput" 
+                        class="ticker-input" 
+                        placeholder="Enter ticker or company name (e.g., NVDA, Nvidia, Apple)"
+                        maxlength="50"
+                    >
+                    <button id="analyzeBtn" class="analyze-btn">Analyze</button>
+                </div>
+            </div>
+            
+            <div id="progressSection" class="progress-section">
+                <div id="gamblerProgress" class="progress-item">
+                    <div class="progress-icon">
+                        <div class="spinner"></div>
+                    </div>
+                    <div class="progress-label">Gambler Agent: Fetching Polymarket data...</div>
+                </div>
+                <div id="gossipProgress" class="progress-item">
+                    <div class="progress-icon">
+                        <div class="spinner"></div>
+                    </div>
+                    <div class="progress-label">Gossip Agent: Fetching news headlines...</div>
+                </div>
+                <div id="judgeProgress" class="progress-item">
+                    <div class="progress-icon">
+                        <div class="spinner"></div>
+                    </div>
+                    <div class="progress-label">Judge Agent: Analyzing with AI...</div>
+                </div>
+                <div id="broadcasterProgress" class="progress-item">
+                    <div class="progress-icon">
+                        <div class="spinner"></div>
+                    </div>
+                    <div class="progress-label">Broadcaster Agent: Generating video...</div>
+                </div>
+            </div>
+            
+            <div id="resultsSection" class="results-section">
+                <div class="result-card">
+                    <h3>Trade Decision</h3>
+                    <div id="decisionBadge" class="decision-badge decision-hold">HOLD</div>
+                    <div id="confidenceBadge" class="confidence-badge"></div>
+                    <div id="explanationText" class="reason-text"></div>
+                    <div id="keyFactors" class="key-factors"></div>
+                </div>
+                
+                <div class="result-card">
+                    <h3>Price Chart</h3>
+                    <div id="chartContainer">
+                        <canvas id="priceChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="result-card">
+                    <h3>Smart Money (Polymarket Analysis)</h3>
+                    <div class="sentiment-score-container">
+                        <span class="sentiment-label">Sentiment Score:</span>
+                        <span id="gamblerScore" class="sentiment-score">--</span>
+                        <span class="sentiment-out-of">/10</span>
+                    </div>
+                    <div id="gamblerExplanation" class="reason-text"></div>
+                    <div class="raw-data">
+                        <strong>Raw Odds:</strong> <span id="rawOdds">--</span>
+                    </div>
+                    <div id="gamblerSources" class="sources-container"></div>
+                </div>
+                
+                <div class="result-card">
+                    <h3>Public Sentiment (News Analysis)</h3>
+                    <div class="sentiment-score-container">
+                        <span class="sentiment-label">Sentiment Score:</span>
+                        <span id="gossipScore" class="sentiment-score">--</span>
+                        <span class="sentiment-out-of">/10</span>
+                    </div>
+                    <div id="gossipSummary" class="reason-text"></div>
+                    <div class="raw-data">
+                        <strong>Articles Analyzed:</strong> <span id="articlesCount">--</span>
+                    </div>
+                    <div id="gossipSources" class="sources-container"></div>
+                </div>
+            </div>
+            
+            <div id="errorMessage" class="error-message hidden"></div>
+        </div>
+    </div>
+    
+    <script>
+        const tickerInput = document.getElementById('tickerInput');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const progressSection = document.getElementById('progressSection');
+        const resultsSection = document.getElementById('resultsSection');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        let currentJobId = null;
+        let pollInterval = null;
+        let priceChart = null;
+        
+        // Progress elements
+        const progressItems = {
+            gambler: document.getElementById('gamblerProgress'),
+            gossip: document.getElementById('gossipProgress'),
+            judge: document.getElementById('judgeProgress'),
+            broadcaster: document.getElementById('broadcasterProgress')
+        };
+        
+        // Results elements
+        const decisionBadge = document.getElementById('decisionBadge');
+        const confidenceBadge = document.getElementById('confidenceBadge');
+        const explanationText = document.getElementById('explanationText');
+        const keyFactors = document.getElementById('keyFactors');
+        const gamblerScore = document.getElementById('gamblerScore');
+        const gamblerExplanation = document.getElementById('gamblerExplanation');
+        const rawOdds = document.getElementById('rawOdds');
+        const gossipScore = document.getElementById('gossipScore');
+        const gossipSummary = document.getElementById('gossipSummary');
+        const articlesCount = document.getElementById('articlesCount');
+        
+        analyzeBtn.addEventListener('click', startAnalysis);
+        tickerInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                startAnalysis();
+            }
+        });
+        
+        function startAnalysis() {
+            const input = tickerInput.value.trim();
+            console.log('[FRONTEND] startAnalysis() called with input:', input);
+            
+            if (!input) {
+                console.error('[FRONTEND] Empty input - showing error');
+                showError('Please enter a ticker symbol or company name');
+                return;
+            }
+            
+            console.log('[FRONTEND] Resetting UI and starting analysis...');
+            // Reset UI
+            resetUI();
+            progressSection.classList.add('active');
+            resultsSection.classList.remove('active');
+            errorMessage.classList.add('hidden');
+            analyzeBtn.disabled = true;
+            
+            console.log('[FRONTEND] Sending POST request to /analyze');
+            console.log('[FRONTEND] Request body:', JSON.stringify({ ticker: input }));
+            
+            // Start analysis
+            fetch('/analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ ticker: input })
+            })
+            .then(response => {
+                console.log('[FRONTEND] Response received:', response.status, response.statusText);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('[FRONTEND] Response data:', data);
+                currentJobId = data.job_id;
+                console.log('[FRONTEND] Job ID received:', currentJobId);
+                console.log('[FRONTEND] Starting polling...');
+                startPolling();
+            })
+            .catch(error => {
+                console.error('[FRONTEND] Error in startAnalysis:', error);
+                showError(`Failed to start analysis: ${error.message}`);
+                analyzeBtn.disabled = false;
+            });
+        }
+        
+        function startPolling() {
+            console.log('[FRONTEND] startPolling() called for job:', currentJobId);
+            
+            if (pollInterval) {
+                console.log('[FRONTEND] Clearing existing poll interval');
+                clearInterval(pollInterval);
+            }
+            
+            let pollCount = 0;
+            pollInterval = setInterval(() => {
+                pollCount++;
+                console.log(`[FRONTEND] Poll #${pollCount}: Fetching status for job ${currentJobId}`);
+                
+                fetch(`/status/${currentJobId}`)
+                    .then(response => {
+                        console.log(`[FRONTEND] Poll #${pollCount} response:`, response.status);
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log(`[FRONTEND] Poll #${pollCount} data:`, data);
+                        console.log(`[FRONTEND] Status: ${data.status}`);
+                        console.log(`[FRONTEND] Progress:`, data.progress);
+                        
+                        updateProgress(data.progress);
+                        
+                        if (data.status === 'completed') {
+                            console.log('[FRONTEND] Analysis completed! Stopping polling.');
+                            clearInterval(pollInterval);
+                            console.log('[FRONTEND] Displaying results...');
+                            displayResults(data.result);
+                            analyzeBtn.disabled = false;
+                        } else if (data.status === 'error') {
+                            console.error('[FRONTEND] Analysis error:', data.error);
+                            clearInterval(pollInterval);
+                            showError(data.error || 'Analysis failed');
+                            analyzeBtn.disabled = false;
+                        } else {
+                            console.log(`[FRONTEND] Poll #${pollCount}: Still running (status: ${data.status})`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error(`[FRONTEND] Poll #${pollCount} error:`, error);
+                    });
+            }, 1000); // Poll every second
+        }
+        
+        function updateProgress(progress) {
+            Object.keys(progress).forEach(agent => {
+                const item = progressItems[agent];
+                const agentProgress = progress[agent];
+                
+                item.classList.remove('active', 'completed', 'error');
+                
+                if (agentProgress.status === 'running') {
+                    item.classList.add('active');
+                } else if (agentProgress.status === 'completed') {
+                    item.classList.add('completed');
+                    item.querySelector('.progress-icon').innerHTML = '✓';
+                } else if (agentProgress.status === 'error') {
+                    item.classList.add('error');
+                    item.querySelector('.progress-icon').innerHTML = '✗';
+                }
+            });
+        }
+        
+        function displayResults(result) {
+            // Animate results section appearance
+            resultsSection.style.opacity = '0';
+            resultsSection.style.transform = 'translateY(20px)';
+            
+            // Update Judge decision with animation
+            const judge = result.judge || {};
+            const decision = judge.decision || 'HOLD';
+            decisionBadge.textContent = decision;
+            decisionBadge.className = `decision-badge decision-${decision.toLowerCase()}`;
+            decisionBadge.style.animation = 'fadeInScale 0.6s ease-out';
+            
+            // Update confidence
+            const confidence = judge.confidence || 'medium';
+            confidenceBadge.textContent = `Confidence: ${confidence.toUpperCase()}`;
+            confidenceBadge.className = `confidence-badge confidence-${confidence}`;
+            confidenceBadge.style.animation = 'fadeIn 0.5s ease-out 0.2s both';
+            
+            // Update explanation
+            explanationText.textContent = judge.explanation || 'No explanation provided.';
+            explanationText.style.animation = 'fadeIn 0.5s ease-out 0.3s both';
+            
+            // Update key factors
+            keyFactors.innerHTML = '';
+            if (judge.key_factors && judge.key_factors.length > 0) {
+                const factorsTitle = document.createElement('strong');
+                factorsTitle.textContent = 'Key Factors: ';
+                keyFactors.appendChild(factorsTitle);
+                keyFactors.appendChild(document.createTextNode(judge.key_factors.join(', ')));
+            }
+            keyFactors.style.animation = 'fadeIn 0.5s ease-out 0.4s both';
+            
+            // Load and display chart
+            const ticker = result.ticker || '';
+            if (ticker) {
+                setTimeout(() => loadChart(ticker), 200);
+            }
+            
+            // Animate results section
+            setTimeout(() => {
+                resultsSection.style.transition = 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)';
+                resultsSection.style.opacity = '1';
+                resultsSection.style.transform = 'translateY(0)';
+            }, 100);
+            
+            // Update Gambler (Smart Money) with animation
+            const gambler = result.gambler || {};
+            gamblerScore.textContent = gambler.sentiment_score || '--';
+            gamblerScore.style.animation = 'fadeInScale 0.6s ease-out 0.5s both';
+            gamblerExplanation.textContent = gambler.explanation || 'No analysis available.';
+            gamblerExplanation.style.animation = 'fadeIn 0.5s ease-out 0.6s both';
+            if (gambler.raw_odds !== null && gambler.raw_odds !== undefined) {
+                rawOdds.textContent = `${(gambler.raw_odds * 100).toFixed(1)}%`;
+            } else {
+                rawOdds.textContent = 'N/A';
+            }
+            
+            // Display Gambler sources
+            const gamblerSourcesDiv = document.getElementById('gamblerSources');
+            gamblerSourcesDiv.innerHTML = '';
+            if (gambler.sources && gambler.sources.length > 0) {
+                const sourcesTitle = document.createElement('strong');
+                sourcesTitle.textContent = 'Sources: ';
+                gamblerSourcesDiv.appendChild(sourcesTitle);
+                const sourcesList = document.createElement('ul');
+                sourcesList.className = 'sources-list';
+                gambler.sources.forEach(source => {
+                    const li = document.createElement('li');
+                    const link = document.createElement('a');
+                    link.href = source.url || '#';
+                    link.target = '_blank';
+                    link.textContent = `${source.question} (${source.probability})`;
+                    if (!source.url) link.style.pointerEvents = 'none';
+                    li.appendChild(link);
+                    sourcesList.appendChild(li);
+                });
+                gamblerSourcesDiv.appendChild(sourcesList);
+            }
+            
+            // Update Gossip (Public Sentiment) with animation
+            const gossip = result.gossip || {};
+            gossipScore.textContent = gossip.sentiment_score || '--';
+            gossipScore.style.animation = 'fadeInScale 0.6s ease-out 0.7s both';
+            gossipSummary.textContent = gossip.summary || 'No summary available.';
+            gossipSummary.style.animation = 'fadeIn 0.5s ease-out 0.8s both';
+            articlesCount.textContent = gossip.articles_count || 0;
+            
+            // Display Gossip sources
+            const gossipSourcesDiv = document.getElementById('gossipSources');
+            gossipSourcesDiv.innerHTML = '';
+            if (gossip.sources && gossip.sources.length > 0) {
+                const sourcesTitle = document.createElement('strong');
+                sourcesTitle.textContent = 'Sources: ';
+                gossipSourcesDiv.appendChild(sourcesTitle);
+                const sourcesList = document.createElement('ul');
+                sourcesList.className = 'sources-list';
+                gossip.sources.forEach(source => {
+                    const li = document.createElement('li');
+                    const link = document.createElement('a');
+                    link.href = source.url || '#';
+                    link.target = '_blank';
+                    link.textContent = source.title || 'Unknown';
+                    if (!source.url) link.style.pointerEvents = 'none';
+                    li.appendChild(link);
+                    sourcesList.appendChild(li);
+                });
+                gossipSourcesDiv.appendChild(sourcesList);
+            }
+            
+            // Show results
+            progressSection.classList.remove('active');
+            resultsSection.classList.add('active');
+        }
+        
+        function loadChart(ticker) {
+            console.log(`[FRONTEND] Loading chart for ticker: ${ticker}`);
+            
+            const chartContainer = document.getElementById('chartContainer');
+            if (!chartContainer) {
+                console.error('[FRONTEND] Chart container not found');
+                return;
+            }
+            
+            // Show loading state
+            chartContainer.innerHTML = '<p style="color: #b0b0b0; text-align: center; padding: 20px;">Loading chart data...</p>';
+            
+            fetch(`/chart/${ticker}`)
+                .then(response => {
+                    console.log(`[FRONTEND] Chart response status: ${response.status}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log(`[FRONTEND] Chart data received:`, data);
+                    console.log(`[FRONTEND] Dates: ${data.dates ? data.dates.length : 0}, Prices: ${data.prices ? data.prices.length : 0}`);
+                    
+                    if (!data.dates || !data.prices || data.dates.length === 0) {
+                        throw new Error('No chart data available');
+                    }
+                    
+                    // Restore canvas element
+                    chartContainer.innerHTML = '<canvas id="priceChart"></canvas>';
+                    renderChart(data, ticker);
+                })
+                .catch(error => {
+                    console.error(`[FRONTEND] Error loading chart:`, error);
+                    chartContainer.innerHTML = `<p style="color: #ff4444; text-align: center; padding: 20px;">Chart data unavailable: ${error.message}</p>`;
+                });
+        }
+        
+        function renderChart(data, ticker) {
+            const canvas = document.getElementById('priceChart');
+            if (!canvas) {
+                console.error('[FRONTEND] Canvas element not found');
+                return;
+            }
+            
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                console.error('[FRONTEND] Could not get 2D context');
+                return;
+            }
+            
+            // Destroy existing chart if it exists
+            if (priceChart) {
+                priceChart.destroy();
+            }
+            
+            // Check if Chart is available
+            if (typeof Chart === 'undefined') {
+                console.error('[FRONTEND] Chart.js not loaded');
+                const chartContainer = document.getElementById('chartContainer');
+                chartContainer.innerHTML = `<p style="color: #999; text-align: center; padding: 20px;">Chart library not loaded. Please refresh the page.</p>`;
+                return;
+            }
+            
+            console.log(`[FRONTEND] Rendering chart with ${data.dates.length} data points`);
+            
+            priceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.dates.map(date => {
+                        const d = new Date(date);
+                        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    }),
+                    datasets: [{
+                        label: `${ticker} Price`,
+                        data: data.prices,
+                        borderColor: '#00ff88',
+                        backgroundColor: 'rgba(0, 255, 136, 0.08)',
+                        borderWidth: 2.5,
+                        tension: 0.5,
+                        fill: true,
+                        pointRadius: 0,
+                        pointHoverRadius: 6,
+                        pointHoverBackgroundColor: '#00ff88',
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 2,
+                        shadowColor: 'rgba(0, 255, 136, 0.3)',
+                        shadowBlur: 10,
+                        shadowOffsetY: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `${ticker} - 6 Month Price History`,
+                            color: '#ffffff',
+                            font: {
+                                size: 16,
+                                weight: 'bold'
+                            },
+                            padding: {
+                                top: 10,
+                                bottom: 20
+                            }
+                        },
+                        legend: {
+                            display: true,
+                            labels: {
+                                color: '#b0b0b0',
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: '#1e1e1e',
+                            titleColor: '#ffffff',
+                            bodyColor: '#b0b0b0',
+                            borderColor: '#00ff88',
+                            borderWidth: 1,
+                            padding: 12,
+                            displayColors: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return `Price: $${context.parsed.y.toFixed(2)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'Price ($)',
+                                color: '#b0b0b0',
+                                font: {
+                                    size: 12
+                                }
+                            },
+                            ticks: {
+                                color: '#b0b0b0',
+                                callback: function(value) {
+                                    return '$' + value.toFixed(2);
+                                }
+                            },
+                            grid: {
+                                color: '#2a2a2a',
+                                borderColor: '#2a2a2a'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date',
+                                color: '#b0b0b0',
+                                font: {
+                                    size: 12
+                                }
+                            },
+                            ticks: {
+                                color: '#b0b0b0',
+                                maxRotation: 45,
+                                minRotation: 45
+                            },
+                            grid: {
+                                color: '#2a2a2a',
+                                borderColor: '#2a2a2a'
+                            }
+                        }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    }
+                }
+            });
+            
+            console.log('[FRONTEND] Chart rendered successfully');
+        }
+        
+        function resetUI() {
+            Object.values(progressItems).forEach(item => {
+                item.classList.remove('active', 'completed', 'error');
+                item.querySelector('.progress-icon').innerHTML = '<div class="spinner"></div>';
+            });
+            
+            decisionBadge.textContent = 'HOLD';
+            decisionBadge.className = 'decision-badge decision-hold';
+            confidenceBadge.textContent = '';
+            explanationText.textContent = '';
+            keyFactors.innerHTML = '';
+            gamblerScore.textContent = '--';
+            gamblerExplanation.textContent = '';
+            rawOdds.textContent = '--';
+            gossipScore.textContent = '--';
+            gossipSummary.textContent = '';
+            articlesCount.textContent = '--';
+        }
+        
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+            progressSection.classList.remove('active');
+        }
+    </script>
+</body>
+</html>
