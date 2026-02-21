@@ -53,3 +53,9 @@ htmlcov/
 *.tmp
 *.temp
 .cache/
+
+# Video/audio files from video_gossip agent
+video_audio.mp3
+video_raw.*
+sentiment_audio.mp3
+sentiment_raw.*

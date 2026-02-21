@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 
 from agents.gambler import get_polymarket_sentiment
 from agents.gossip import get_news_sentiment
+from agents.video_gossip import get_video_sentiment
 from agents.judge import decide_trade
 from media.broadcaster import generate_video
 from utils.ticker_converter import company_name_to_ticker
@@ -52,6 +53,42 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # In-memory job store for progress tracking
 jobs: Dict[str, Dict] = {}
 
+# Hardcoded company descriptions (replacing Airia API)
+COMPANY_DESCRIPTIONS = {
+    "PLTR": "Palantir Technologies Inc. is a software company that specializes in big data analytics. Founded in 2003, Palantir provides platforms for integrating, managing, and securing data. The company's software is used by government agencies, financial institutions, and large enterprises for data analysis, intelligence gathering, and operational decision-making. Palantir's flagship products include Palantir Gotham for government clients and Palantir Foundry for commercial enterprises.",
+    "AAPL": "Apple Inc. is a multinational technology company that designs, develops, and sells consumer electronics, computer software, and online services. Founded in 1976, Apple is one of the world's largest technology companies by revenue. The company's hardware products include the iPhone smartphone, iPad tablet, Mac personal computers, Apple Watch smartwatch, AirPods earbuds, and Apple TV. Apple's software includes the iOS, iPadOS, macOS, watchOS, and tvOS operating systems, and the iTunes media player.",
+    "NVDA": "NVIDIA Corporation is a technology company that designs graphics processing units (GPUs) for gaming, professional visualization, data centers, and automotive markets. Founded in 1993, NVIDIA is a leader in artificial intelligence computing and has expanded beyond gaming to become a key player in AI, machine learning, autonomous vehicles, and data center solutions. The company's GPUs are widely used for AI training and inference, cryptocurrency mining, and high-performance computing applications.",
+    "TSM": "Taiwan Semiconductor Manufacturing Company (TSMC) is the world's largest dedicated independent semiconductor foundry. Founded in 1987, TSMC manufactures chips for other companies rather than designing its own. The company produces advanced semiconductor chips used in smartphones, computers, servers, automotive electronics, and IoT devices. TSMC is a critical supplier to major technology companies including Apple, AMD, NVIDIA, and Qualcomm, and is known for its leading-edge manufacturing processes and production capacity."
+}
+
+
+async def get_company_description(ticker: str, company_name: str = None) -> str:
+    """
+    Get company description from hardcoded dictionary.
+    
+    Args:
+        ticker: Stock ticker symbol
+        company_name: Optional company name (not used, kept for compatibility)
+    
+    Returns:
+        Company description string, or generic description if ticker not found
+    """
+    logger.info(f"[COMPANY_DESC] ===== get_company_description() called =====")
+    logger.info(f"[COMPANY_DESC] Parameters: ticker='{ticker}', company_name='{company_name or None}'")
+    
+    ticker_upper = ticker.upper()
+    
+    if ticker_upper in COMPANY_DESCRIPTIONS:
+        description = COMPANY_DESCRIPTIONS[ticker_upper]
+        logger.info(f"[COMPANY_DESC] ✓ Found description for {ticker_upper} ({len(description)} chars)")
+        logger.info(f"[COMPANY_DESC] Description preview: {description[:150]}...")
+        return description
+    else:
+        # Fallback for unknown tickers
+        fallback = f"{company_name or ticker} is a publicly traded company."
+        logger.info(f"[COMPANY_DESC] ⚠ No description found for {ticker_upper}, using fallback")
+        return fallback
+
 
 async def run_analysis(input_text: str, job_id: str) -> Dict:
     """
@@ -80,6 +117,34 @@ async def run_analysis(input_text: str, job_id: str) -> Dict:
         company_name = input_text if input_text.upper() != ticker else None
         logger.info(f"[{job_id}] Final values - Ticker: '{ticker}', Company: '{company_name or 'N/A'}'")
         
+        # Step 0.5: Get company description
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info(f"[{job_id}] ===== STEP 0.5: COMPANY DESCRIPTION =====")
+        logger.info("=" * 80)
+        logger.info(f"[{job_id}] Getting company description for ticker: '{ticker}'")
+        logger.info(f"[{job_id}] About to call get_company_description(ticker='{ticker}', company_name='{company_name or None}')")
+        
+        try:
+            company_description = await get_company_description(ticker, company_name)
+            logger.info(f"[{job_id}] get_company_description() returned: {type(company_description).__name__}")
+            logger.info(f"[{job_id}] Returned value length: {len(company_description) if company_description else 0}")
+            
+            if company_description:
+                logger.info(f"[{job_id}] ✓ Company description retrieved ({len(company_description)} chars)")
+                logger.info(f"[{job_id}] Description preview: {company_description[:150]}...")
+            else:
+                logger.warning(f"[{job_id}] ⚠ No company description available (empty string)")
+                company_description = f"{company_name or ticker} is a publicly traded company."
+        except Exception as e:
+            logger.error(f"[{job_id}] ✗✗✗ ERROR in Step 0.5 (Company Description) ✗✗✗")
+            logger.error(f"[{job_id}] Error type: {type(e).__name__}")
+            logger.error(f"[{job_id}] Error message: {str(e)}")
+            logger.error(f"[{job_id}] Full traceback:", exc_info=True)
+            company_description = f"{company_name or ticker} is a publicly traded company."
+        
+        logger.info(f"[{job_id}] Step 0.5 complete. Final company_description length: {len(company_description)}")
+        
         # Initialize job status
         logger.info(f"[{job_id}] Initializing job status in jobs store...")
         jobs[job_id] = {
@@ -87,6 +152,7 @@ async def run_analysis(input_text: str, job_id: str) -> Dict:
             "progress": {
                 "gambler": {"status": "pending", "data": None},
                 "gossip": {"status": "pending", "data": None},
+                "video_gossip": {"status": "pending", "data": None},
                 "judge": {"status": "pending", "data": None},
                 "broadcaster": {"status": "pending", "data": None}
             },
@@ -201,6 +267,60 @@ async def run_analysis(input_text: str, job_id: str) -> Dict:
             jobs[job_id]["progress"]["gossip"]["data"] = gossip_result
             logger.info(f"[{job_id}] Set fallback gossip_result due to error")
         
+        # Step 2.5: Video Gossip Agent
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info(f"[{job_id}] ===== STEP 2.5: VIDEO GOSSIP AGENT =====")
+        logger.info("=" * 80)
+        logger.info(f"[{job_id}] Starting Video Gossip agent...")
+        logger.info(f"[{job_id}] Parameters: ticker='{ticker}', company_name='{company_name or 'None'}'")
+        
+        jobs[job_id]["progress"]["video_gossip"]["status"] = "running"
+        logger.info(f"[{job_id}] Updated job status: video_gossip.status = 'running'")
+        
+        try:
+            logger.info(f"[{job_id}] Calling get_video_sentiment() in thread...")
+            start_time = asyncio.get_event_loop().time()
+            
+            video_gossip_result = await asyncio.to_thread(
+                get_video_sentiment,
+                ticker,
+                company_name
+            )
+            
+            elapsed = asyncio.get_event_loop().time() - start_time
+            logger.info(f"[{job_id}] Video Gossip agent returned after {elapsed:.2f} seconds")
+            logger.info(f"[{job_id}] Video Gossip result keys: {list(video_gossip_result.keys())}")
+            
+            jobs[job_id]["progress"]["video_gossip"]["status"] = "completed"
+            jobs[job_id]["progress"]["video_gossip"]["data"] = video_gossip_result
+            logger.info(f"[{job_id}] Updated job status: video_gossip.status = 'completed'")
+            
+            logger.info("")
+            logger.info(f"[{job_id}] ✓✓✓ VIDEO GOSSIP AGENT COMPLETED ✓✓✓")
+            logger.info(f"[{job_id}]   - Sentiment Score: {video_gossip_result.get('sentiment_score', 'N/A')}/10")
+            logger.info(f"[{job_id}]   - Videos Analyzed: {video_gossip_result.get('videos_analyzed', 0)}")
+            logger.info(f"[{job_id}]   - Summary preview: {video_gossip_result.get('summary', '')[:100]}...")
+            logger.info(f"[{job_id}]   - Reasoning: {video_gossip_result.get('reasoning', 'N/A')[:100]}...")
+            
+        except Exception as e:
+            logger.error("")
+            logger.error(f"[{job_id}] ✗✗✗ VIDEO GOSSIP AGENT ERROR ✗✗✗")
+            logger.error(f"[{job_id}] Error type: {type(e).__name__}")
+            logger.error(f"[{job_id}] Error message: {str(e)}")
+            logger.error(f"[{job_id}] Full traceback:", exc_info=True)
+            
+            jobs[job_id]["progress"]["video_gossip"]["status"] = "error"
+            video_gossip_result = {
+                "summary": f"Error: {str(e)}",
+                "sentiment_score": 5,
+                "videos_analyzed": 0,
+                "reasoning": f"Error occurred: {type(e).__name__}",
+                "sources": []
+            }
+            jobs[job_id]["progress"]["video_gossip"]["data"] = video_gossip_result
+            logger.info(f"[{job_id}] Set fallback video_gossip_result due to error")
+        
         # Step 3: Judge Agent
         logger.info("")
         logger.info("=" * 80)
@@ -210,6 +330,7 @@ async def run_analysis(input_text: str, job_id: str) -> Dict:
         logger.info(f"[{job_id}] Preparing inputs for Judge:")
         logger.info(f"[{job_id}]   - Gambler sentiment: {gambler_result.get('sentiment_score', 'N/A')}/10")
         logger.info(f"[{job_id}]   - Gossip sentiment: {gossip_result.get('sentiment_score', 'N/A')}/10")
+        logger.info(f"[{job_id}]   - Video Gossip sentiment: {video_gossip_result.get('sentiment_score', 'N/A')}/10")
         logger.info(f"[{job_id}]   - Ticker: '{ticker}', Company: '{company_name or 'None'}'")
         
         jobs[job_id]["progress"]["judge"]["status"] = "running"
@@ -223,6 +344,7 @@ async def run_analysis(input_text: str, job_id: str) -> Dict:
                 decide_trade,
                 gambler_result,
                 gossip_result,
+                video_gossip_result,
                 ticker,
                 company_name
             )
@@ -275,9 +397,11 @@ async def run_analysis(input_text: str, job_id: str) -> Dict:
         result = {
             "ticker": ticker,
             "company_name": company_name,
+            "company_description": company_description,
             "timestamp": datetime.now().isoformat(),
             "gambler": gambler_result,
             "gossip": gossip_result,
+            "video_gossip": video_gossip_result,
             "judge": verdict,
             "video": video_result
         }
@@ -288,6 +412,7 @@ async def run_analysis(input_text: str, job_id: str) -> Dict:
         logger.info(f"[{job_id}]   - Timestamp: {result['timestamp']}")
         logger.info(f"[{job_id}]   - Has gambler data: {bool(result['gambler'])}")
         logger.info(f"[{job_id}]   - Has gossip data: {bool(result['gossip'])}")
+        logger.info(f"[{job_id}]   - Has video_gossip data: {bool(result['video_gossip'])}")
         logger.info(f"[{job_id}]   - Has judge data: {bool(result['judge'])}")
         
         jobs[job_id]["status"] = "completed"

@@ -51,31 +51,64 @@ body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    padding-top: 44px; /* Account for fixed header */
 }
 
 .header {
-    background: rgba(26, 26, 26, 0.4);
+    background: var(--bg-glass);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid var(--border-glass);
-    padding: 12px 20px;
+    padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    position: sticky;
+    position: fixed;
     top: 0;
-    z-index: 100;
-    min-height: 48px;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    width: 100%;
+    box-sizing: border-box;
+    border: none;
+    min-height: 44px;
+    height: 44px;
+}
+
+.header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 0.5px;
+    background: linear-gradient(
+        to right,
+        transparent,
+        var(--border-glass) 20%,
+        var(--border-glass) 80%,
+        transparent
+    );
 }
 
 .header h1 {
-    font-size: 0.85rem;
-    font-weight: 300;
+    font-size: 12px;
+    font-weight: 400;
     color: var(--text-primary);
-    letter-spacing: 1.5px;
+    letter-spacing: 0.5px;
     text-transform: uppercase;
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    line-height: 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "kern" 1;
+    text-rendering: optimizeLegibility;
+    opacity: 0.9;
 }
 
 .content {
@@ -577,12 +610,47 @@ html {
         width: 100%;
         justify-content: center;
     }
+    
+    .header {
+        height: 40px;
+        min-height: 40px;
+    }
+    
+    .header h1 {
+        font-size: 11px;
+        letter-spacing: 0.4px;
+    }
+    
+    .container {
+        padding-top: 40px;
+    }
 }
 
 @media (min-width: 1200px) {
     .container {
         max-width: 1000px;
     }
+}
+
+/* Fix header at extreme zoom levels */
+@media (min-resolution: 2dppx) {
+    .header {
+        height: 44px;
+    }
+}
+
+/* Prevent header overflow at high zoom */
+@media (min-width: 2000px) {
+    .header h1 {
+        font-size: 12px;
+    }
+}
+
+/* Header hover effect - subtle green accent on interaction */
+.header:hover h1 {
+    color: var(--accent-green);
+    opacity: 1;
+    transition: color 0.3s ease, opacity 0.3s ease;
 }
 
 /* Zoom responsiveness - text scales with browser zoom */

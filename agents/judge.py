@@ -55,6 +55,7 @@ def _get_model():
 def decide_trade(
     gambler_data: Dict,
     gossip_data: Dict,
+    video_gossip_data: Dict = None,
     ticker: str = None,
     company_name: str = None
 ) -> Dict[str, str]:
@@ -72,6 +73,11 @@ def decide_trade(
             - sentiment_score: 1-10 score
             - articles_count: Number of articles
             - reasoning: Why this sentiment
+        video_gossip_data: Dictionary from Video Gossip agent with:
+            - summary: Summary of video content
+            - sentiment_score: 1-10 score
+            - videos_analyzed: Number of videos
+            - reasoning: Why this sentiment
         ticker: Optional ticker symbol for context
         company_name: Optional company name for context
     
@@ -87,6 +93,9 @@ def decide_trade(
     logger.info(f"[JUDGE] Step 1: Extracting input data from agents...")
     logger.info(f"[JUDGE] Gambler data keys: {list(gambler_data.keys())}")
     logger.info(f"[JUDGE] Gossip data keys: {list(gossip_data.keys())}")
+    logger.info(f"[JUDGE] Video Gossip data: {video_gossip_data is not None}")
+    if video_gossip_data:
+        logger.info(f"[JUDGE] Video Gossip data keys: {list(video_gossip_data.keys())}")
     
     model = _get_model()
     logger.info(f"[JUDGE] Vertex AI model: {model is not None}")
@@ -126,6 +135,24 @@ def decide_trade(
     logger.info(f"[JUDGE]   - Gossip articles: {gossip_count}")
     logger.info(f"[JUDGE]   - Gossip summary: {gossip_summary[:80]}...")
     
+    # Extract video gossip data
+    if video_gossip_data:
+        logger.info(f"[JUDGE] Extracting Video Gossip agent data...")
+        video_gossip_summary = video_gossip_data.get("summary", "No video analysis available")
+        video_gossip_score = video_gossip_data.get("sentiment_score", 5)
+        video_gossip_count = video_gossip_data.get("videos_analyzed", 0)
+        video_gossip_reasoning = video_gossip_data.get("reasoning", "")
+        
+        logger.info(f"[JUDGE]   - Video Gossip sentiment: {video_gossip_score}/10")
+        logger.info(f"[JUDGE]   - Video Gossip videos: {video_gossip_count}")
+        logger.info(f"[JUDGE]   - Video Gossip summary: {video_gossip_summary[:80]}...")
+    else:
+        video_gossip_summary = "No video analysis available"
+        video_gossip_score = 5
+        video_gossip_count = 0
+        video_gossip_reasoning = "Video analysis not performed"
+        logger.info(f"[JUDGE]   - Video Gossip: Not available (using defaults)")
+    
     # Format odds for display
     odds_display = f"{gambler_odds:.1%}" if gambler_odds is not None else "N/A"
     logger.info(f"[JUDGE] Formatted odds display: {odds_display}")
@@ -145,11 +172,21 @@ Public Sentiment (News):
 - Articles Analyzed: {gossip_count}
 - Reasoning: {gossip_reasoning}
 
+Video Sentiment (YouTube Analysis):
+- Summary: {video_gossip_summary}
+- Sentiment Score: {video_gossip_score}/10
+- Videos Analyzed: {video_gossip_count}
+- Reasoning: {video_gossip_reasoning}
+
 Task:
-1. Compare smart money (prediction markets) vs public sentiment (news)
-2. Identify if there's divergence (opportunity) or alignment (confirmation)
-   - Divergence: Smart money and public disagree → potential opportunity
-   - Alignment: Both agree → confirmation of trend
+1. Compare three sentiment sources:
+   - Smart Money (prediction markets): Real money betting on outcomes
+   - Public Sentiment (news): Written news and articles
+   - Video Sentiment (YouTube): Spoken sentiment from video content
+2. Identify patterns and divergence:
+   - If all three align → strong confirmation
+   - If smart money differs from public/video → potential opportunity
+   - If public and video differ → mixed signals
 3. Make decision: BUY, SELL, or HOLD
    - BUY: Positive signals, good opportunity
    - SELL: Negative signals, risk concerns

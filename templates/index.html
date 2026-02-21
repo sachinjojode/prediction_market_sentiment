@@ -94,6 +94,12 @@
                     </div>
                     <div class="progress-label">Gossip Agent: Fetching news headlines...</div>
                 </div>
+                <div id="videoGossipProgress" class="progress-item">
+                    <div class="progress-icon">
+                        <div class="spinner"></div>
+                    </div>
+                    <div class="progress-label">Video Gossip Agent: Analyzing YouTube videos...</div>
+                </div>
                 <div id="judgeProgress" class="progress-item">
                     <div class="progress-icon">
                         <div class="spinner"></div>
@@ -109,6 +115,11 @@
             </div>
             
             <div id="resultsSection" class="results-section">
+                <div class="result-card" id="companyDescriptionCard" style="display: none;">
+                    <h3>Company Overview</h3>
+                    <div id="companyDescription" class="reason-text"></div>
+                </div>
+                
                 <div class="result-card">
                     <h3>Trade Decision</h3>
                     <div id="decisionBadge" class="decision-badge decision-hold">HOLD</div>
@@ -151,6 +162,20 @@
                     </div>
                     <div id="gossipSources" class="sources-container"></div>
                 </div>
+                
+                <div class="result-card">
+                    <h3>Video Sentiment (YouTube Analysis)</h3>
+                    <div class="sentiment-score-container">
+                        <span class="sentiment-label">Sentiment Score:</span>
+                        <span id="videoGossipScore" class="sentiment-score">--</span>
+                        <span class="sentiment-out-of">/10</span>
+                    </div>
+                    <div id="videoGossipSummary" class="reason-text"></div>
+                    <div class="raw-data">
+                        <strong>Videos Analyzed:</strong> <span id="videosCount">--</span>
+                    </div>
+                    <div id="videoGossipSources" class="sources-container"></div>
+                </div>
             </div>
             
             <div id="errorMessage" class="error-message hidden"></div>
@@ -172,6 +197,7 @@
         const progressItems = {
             gambler: document.getElementById('gamblerProgress'),
             gossip: document.getElementById('gossipProgress'),
+            video_gossip: document.getElementById('videoGossipProgress'),
             judge: document.getElementById('judgeProgress'),
             broadcaster: document.getElementById('broadcasterProgress')
         };
@@ -187,6 +213,9 @@
         const gossipScore = document.getElementById('gossipScore');
         const gossipSummary = document.getElementById('gossipSummary');
         const articlesCount = document.getElementById('articlesCount');
+        const videoGossipScore = document.getElementById('videoGossipScore');
+        const videoGossipSummary = document.getElementById('videoGossipSummary');
+        const videosCount = document.getElementById('videosCount');
         
         analyzeBtn.addEventListener('click', startAnalysis);
         tickerInput.addEventListener('keypress', (e) => {
@@ -318,6 +347,19 @@
             resultsSection.style.opacity = '0';
             resultsSection.style.transform = 'translateY(20px)';
             
+            // Update Company Description
+            const companyDescription = result.company_description || '';
+            const companyDescriptionCard = document.getElementById('companyDescriptionCard');
+            const companyDescriptionDiv = document.getElementById('companyDescription');
+            
+            if (companyDescription) {
+                companyDescriptionDiv.textContent = companyDescription;
+                companyDescriptionCard.style.display = 'block';
+                companyDescriptionCard.style.animation = 'fadeIn 0.6s ease-out 0.05s both';
+            } else {
+                companyDescriptionCard.style.display = 'none';
+            }
+            
             // Update Judge decision with animation
             const judge = result.judge || {};
             const decision = judge.decision || 'HOLD';
@@ -420,6 +462,36 @@
                     sourcesList.appendChild(li);
                 });
                 gossipSourcesDiv.appendChild(sourcesList);
+            }
+            
+            // Update Video Gossip (YouTube Sentiment) with animation
+            const videoGossip = result.video_gossip || {};
+            videoGossipScore.textContent = videoGossip.sentiment_score || '--';
+            videoGossipScore.style.animation = 'fadeInScale 0.6s ease-out 0.9s both';
+            videoGossipSummary.textContent = videoGossip.summary || 'No video analysis available.';
+            videoGossipSummary.style.animation = 'fadeIn 0.5s ease-out 1.0s both';
+            videosCount.textContent = videoGossip.videos_analyzed || 0;
+            
+            // Display Video Gossip sources
+            const videoGossipSourcesDiv = document.getElementById('videoGossipSources');
+            videoGossipSourcesDiv.innerHTML = '';
+            if (videoGossip.sources && videoGossip.sources.length > 0) {
+                const sourcesTitle = document.createElement('strong');
+                sourcesTitle.textContent = 'Sources: ';
+                videoGossipSourcesDiv.appendChild(sourcesTitle);
+                const sourcesList = document.createElement('ul');
+                sourcesList.className = 'sources-list';
+                videoGossip.sources.forEach(source => {
+                    const li = document.createElement('li');
+                    const link = document.createElement('a');
+                    link.href = source.url || '#';
+                    link.target = '_blank';
+                    link.textContent = `${source.title || 'Unknown'} (${source.channel || ''})`;
+                    if (!source.url) link.style.pointerEvents = 'none';
+                    li.appendChild(link);
+                    sourcesList.appendChild(li);
+                });
+                videoGossipSourcesDiv.appendChild(sourcesList);
             }
             
             // Show results
@@ -617,6 +689,12 @@
                 item.querySelector('.progress-icon').innerHTML = '<div class="spinner"></div>';
             });
             
+            // Reset company description
+            const companyDescriptionCard = document.getElementById('companyDescriptionCard');
+            const companyDescriptionDiv = document.getElementById('companyDescription');
+            if (companyDescriptionCard) companyDescriptionCard.style.display = 'none';
+            if (companyDescriptionDiv) companyDescriptionDiv.textContent = '';
+            
             decisionBadge.textContent = 'HOLD';
             decisionBadge.className = 'decision-badge decision-hold';
             confidenceBadge.textContent = '';
@@ -628,6 +706,9 @@
             gossipScore.textContent = '--';
             gossipSummary.textContent = '';
             articlesCount.textContent = '--';
+            videoGossipScore.textContent = '--';
+            videoGossipSummary.textContent = '';
+            videosCount.textContent = '--';
         }
         
         function showError(message) {
