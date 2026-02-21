@@ -21,6 +21,7 @@ from agents.gambler import get_polymarket_sentiment
 from agents.gossip import get_news_sentiment
 from agents.video_gossip import get_video_sentiment
 from agents.judge import decide_trade
+from agents.self_improvement import get_improvement_system
 from media.broadcaster import generate_video
 from utils.ticker_converter import company_name_to_ticker
 import requests
@@ -412,6 +413,36 @@ async def run_analysis(input_text: str, job_id: str) -> Dict:
         logger.info(f"[{job_id}]   - Timestamp: {result['timestamp']}")
         logger.info(f"[{job_id}]   - Has gambler data: {bool(result['gambler'])}")
         logger.info(f"[{job_id}]   - Has gossip data: {bool(result['gossip'])}")
+        
+        # Record prediction for self-improvement
+        logger.info(f"[{job_id}] Recording prediction for self-improvement system...")
+        try:
+            improvement_system = get_improvement_system()
+            # Try to get current price from chart data
+            current_price = None
+            try:
+                chart_response = await get_chart_data(ticker)
+                if hasattr(chart_response, 'body'):
+                    import json
+                    chart_data = json.loads(chart_response.body)
+                    if chart_data and 'prices' in chart_data and chart_data['prices']:
+                        current_price = chart_data['prices'][-1]
+            except Exception as e:
+                logger.warning(f"[{job_id}] Could not fetch current price: {e}")
+            
+            improvement_system.record_prediction(
+                ticker=ticker,
+                agent_results={
+                    "gambler": gambler_result,
+                    "gossip": gossip_result,
+                    "video_gossip": video_gossip_result
+                },
+                judge_decision=verdict,
+                current_price=current_price
+            )
+            logger.info(f"[{job_id}] ✓ Prediction recorded successfully")
+        except Exception as e:
+            logger.error(f"[{job_id}] Error recording prediction: {e}", exc_info=True)
         logger.info(f"[{job_id}]   - Has video_gossip data: {bool(result['video_gossip'])}")
         logger.info(f"[{job_id}]   - Has judge data: {bool(result['judge'])}")
         
@@ -680,6 +711,28 @@ async def get_chart_data(ticker: str):
     except Exception as e:
         logger.error(f"[API] Error fetching chart data: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error fetching chart data: {str(e)}")
+
+
+@app.get("/api/performance")
+async def get_performance():
+    """Get agent performance metrics and self-improvement insights."""
+    try:
+        improvement_system = get_improvement_system()
+        performance = improvement_system.get_performance_summary()
+        insights = improvement_system.get_insights()
+        
+        return JSONResponse({
+            "performance": performance,
+            "insights": insights,
+            "total_predictions": sum(p.get("total_predictions", 0) for p in performance.values())
+        })
+    except Exception as e:
+        logger.error(f"[API] Error fetching performance: {e}", exc_info=True)
+        return JSONResponse({
+            "performance": {},
+            "insights": ["System initializing. Make predictions to see performance metrics."],
+            "total_predictions": 0
+        })
 
 
 if __name__ == "__main__":

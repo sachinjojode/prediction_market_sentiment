@@ -59,3 +59,8 @@ video_audio.mp3
 video_raw.*
 sentiment_audio.mp3
 sentiment_raw.*
+
+# Self-improvement historical data
+data/
+agent_history.json
+agent_performance.json

@@ -2,6 +2,8 @@
 
 Uses Google Vertex AI (Gemini) to analyze Polymarket odds vs news sentiment
 and make a trade decision (BUY/SELL/HOLD) with reasoning and script.
+
+Includes self-improvement system that learns from prediction accuracy.
 """
 
 import os
@@ -10,6 +12,7 @@ import logging
 from typing import Optional, List, Dict
 from dotenv import load_dotenv
 from utils.vertex_ai_client import generate_content_with_fallback
+from agents.self_improvement import get_improvement_system
 
 # Load environment variables
 load_dotenv()
@@ -50,6 +53,20 @@ def _get_model():
             return None
     
     return _model
+
+
+def _weight_to_trust(weight: float) -> str:
+    """Convert weight multiplier to trust level description."""
+    if weight >= 1.3:
+        return "very high trust"
+    elif weight >= 1.1:
+        return "high trust"
+    elif weight >= 0.9:
+        return "normal trust"
+    elif weight >= 0.7:
+        return "reduced trust"
+    else:
+        return "low trust"
 
 
 def decide_trade(
@@ -150,33 +167,68 @@ def decide_trade(
         video_gossip_summary = "No video analysis available"
         video_gossip_score = 5
         video_gossip_count = 0
-        video_gossip_reasoning = "Video analysis not performed"
-        logger.info(f"[JUDGE]   - Video Gossip: Not available (using defaults)")
+        video_gossip_reasoning = ""
+    
+    # Get learned agent weights from self-improvement system
+    logger.info(f"[JUDGE] Fetching agent weights from self-improvement system...")
+    try:
+        improvement_system = get_improvement_system()
+        agent_weights = improvement_system.get_agent_weights()
+        logger.info(f"[JUDGE] Agent weights: {agent_weights}")
+        
+        # Apply weights to sentiment scores
+        weighted_gambler = gambler_score * agent_weights.get("gambler", 1.0)
+        weighted_gossip = gossip_score * agent_weights.get("gossip", 1.0)
+        weighted_video = video_gossip_score * agent_weights.get("video_gossip", 1.0)
+        
+        # Calculate weighted average (normalize back to 1-10 scale)
+        total_weight = sum(agent_weights.values())
+        weighted_avg = (weighted_gambler + weighted_gossip + weighted_video) / total_weight
+        
+        logger.info(f"[JUDGE] Weighted scores:")
+        logger.info(f"[JUDGE]   - Gambler: {gambler_score} × {agent_weights.get('gambler', 1.0):.2f} = {weighted_gambler:.2f}")
+        logger.info(f"[JUDGE]   - Gossip: {gossip_score} × {agent_weights.get('gossip', 1.0):.2f} = {weighted_gossip:.2f}")
+        logger.info(f"[JUDGE]   - Video: {video_gossip_score} × {agent_weights.get('video_gossip', 1.0):.2f} = {weighted_video:.2f}")
+        logger.info(f"[JUDGE]   - Weighted average: {weighted_avg:.2f}/10")
+        
+    except Exception as e:
+        logger.warning(f"[JUDGE] Could not fetch agent weights: {e}. Using equal weights.")
+        agent_weights = {"gambler": 1.0, "gossip": 1.0, "video_gossip": 1.0}
+        weighted_avg = (gambler_score + gossip_score + video_gossip_score) / 3
     
     # Format odds for display
     odds_display = f"{gambler_odds:.1%}" if gambler_odds is not None else "N/A"
     logger.info(f"[JUDGE] Formatted odds display: {odds_display}")
     
-    # Construct prompt
+    # Construct prompt with weight information
     prompt = f"""You are a hedge fund manager analyzing {company_display} ({ticker_display}).
+
+AGENT PERFORMANCE WEIGHTS (based on historical accuracy):
+- Smart Money Agent: {agent_weights.get('gambler', 1.0):.2f}x weight ({_weight_to_trust(agent_weights.get('gambler', 1.0))})
+- News Sentiment Agent: {agent_weights.get('gossip', 1.0):.2f}x weight ({_weight_to_trust(agent_weights.get('gossip', 1.0))})
+- Video Sentiment Agent: {agent_weights.get('video_gossip', 1.0):.2f}x weight ({_weight_to_trust(agent_weights.get('video_gossip', 1.0))})
+
+NOTE: Higher weights indicate historically more accurate predictions. Consider this when weighing conflicting signals.
 
 Smart Money (Prediction Markets):
 - Analysis: {gambler_explanation}
-- Sentiment Score: {gambler_score}/10
+- Sentiment Score: {gambler_score}/10 (Weighted: {weighted_gambler:.1f}/10)
 - Raw Odds: {odds_display}
 - Reasoning: {gambler_reasoning}
 
 Public Sentiment (News):
 - Summary: {gossip_summary}
-- Sentiment Score: {gossip_score}/10
+- Sentiment Score: {gossip_score}/10 (Weighted: {weighted_gossip:.1f}/10)
 - Articles Analyzed: {gossip_count}
 - Reasoning: {gossip_reasoning}
 
 Video Sentiment (YouTube Analysis):
 - Summary: {video_gossip_summary}
-- Sentiment Score: {video_gossip_score}/10
+- Sentiment Score: {video_gossip_score}/10 (Weighted: {weighted_video:.1f}/10)
 - Videos Analyzed: {video_gossip_count}
 - Reasoning: {video_gossip_reasoning}
+
+WEIGHTED AVERAGE SENTIMENT: {weighted_avg:.1f}/10
 
 Task:
 1. Compare three sentiment sources:

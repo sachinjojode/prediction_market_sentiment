@@ -79,6 +79,18 @@
                     >
                     <button id="analyzeBtn" class="analyze-btn">Analyze</button>
                 </div>
+                
+                <!-- Self-Improvement Performance Dashboard -->
+                <div id="performanceSection" class="performance-section" style="margin-top: 2rem;">
+                    <details>
+                        <summary style="cursor: pointer; font-size: 0.9rem; color: var(--accent-green); margin-bottom: 1rem;">
+                            📊 Agent Performance & Self-Improvement
+                        </summary>
+                        <div id="performanceContent" class="performance-content">
+                            <p style="font-size: 0.85rem; color: var(--text-secondary);">Loading performance metrics...</p>
+                        </div>
+                    </details>
+                </div>
             </div>
             
             <div id="progressSection" class="progress-section">
@@ -682,6 +694,72 @@
             
             console.log('[FRONTEND] Chart rendered successfully');
         }
+        
+        async function loadPerformanceData() {
+            try {
+                const response = await fetch('/api/performance');
+                const data = await response.json();
+                
+                const content = document.getElementById('performanceContent');
+                if (!content) return;
+                
+                let html = '';
+                
+                // Show total predictions
+                html += `<p style="font-size: 0.9rem; margin-bottom: 1rem; color: var(--text-primary);">
+                    <strong>Total Predictions:</strong> ${data.total_predictions || 0}
+                </p>`;
+                
+                // Show agent performance
+                if (data.performance && Object.keys(data.performance).length > 0) {
+                    html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">';
+                    
+                    for (const [agentName, perf] of Object.entries(data.performance)) {
+                        const displayName = agentName.charAt(0).toUpperCase() + agentName.slice(1).replace('_', ' ');
+                        const trustLevel = parseFloat(perf.weight_adjustment.replace('x', ''));
+                        const trustColor = trustLevel >= 1.1 ? 'var(--accent-green)' : trustLevel >= 0.9 ? 'var(--text-primary)' : '#ff6b6b';
+                        
+                        html += `
+                            <div style="background: rgba(255, 255, 255, 0.03); padding: 1rem; border-radius: 8px; border: 1px solid var(--border-glass);">
+                                <h4 style="font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--accent-green);">${displayName}</h4>
+                                <p style="font-size: 0.8rem; margin: 0.25rem 0;">Accuracy: <strong>${perf.accuracy}</strong></p>
+                                <p style="font-size: 0.8rem; margin: 0.25rem 0;">Recent: <strong>${perf.recent_accuracy}</strong></p>
+                                <p style="font-size: 0.8rem; margin: 0.25rem 0;">Predictions: <strong>${perf.total_predictions}</strong></p>
+                                <p style="font-size: 0.8rem; margin: 0.25rem 0; color: ${trustColor};">
+                                    Weight: <strong>${perf.weight_adjustment}</strong>
+                                </p>
+                            </div>
+                        `;
+                    }
+                    html += '</div>';
+                }
+                
+                // Show insights
+                if (data.insights && data.insights.length > 0) {
+                    html += '<div style="background: rgba(0, 255, 136, 0.05); padding: 1rem; border-radius: 8px; border: 1px solid rgba(0, 255, 136, 0.2);">';
+                    html += '<h4 style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--accent-green);">💡 Insights</h4>';
+                    for (const insight of data.insights) {
+                        html += `<p style="font-size: 0.8rem; margin: 0.5rem 0; line-height: 1.5;">${insight}</p>`;
+                    }
+                    html += '</div>';
+                }
+                
+                content.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading performance data:', error);
+                const content = document.getElementById('performanceContent');
+                if (content) {
+                    content.innerHTML = '<p style="font-size: 0.85rem; color: var(--text-secondary);">No performance data yet. Make predictions to see metrics.</p>';
+                }
+            }
+        }
+        
+        // Load performance data on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPerformanceData();
+            // Refresh performance data every 30 seconds
+            setInterval(loadPerformanceData, 30000);
+        });
         
         function resetUI() {
             Object.values(progressItems).forEach(item => {
